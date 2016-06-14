@@ -1,0 +1,93 @@
+---
+title: "Course Project"
+output: html_document
+---
+
+# Practical Machine Learning Assignment
+
+## Executive Summary
+
+We analyzed the data in the Weight Lifting Exercises Dataset to produce a prediction on the quality of the rip curls performed by unclassified 20 subjects in the testing set. Our approach was to evaluate the performance of random forest and linear discriminant analysis algorithms. The random forest model rendered reasonably accurate predictions, and was therefore applied to the 20 cases previusly mentioned.
+
+## Cleaning up the data
+
+The original sets can be download from the links below. In case of running the code, the files must be placed in the working directory.
+
+-https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+-https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+First we proceeded to load and clean the data. A simple observation of the first rows show that many columns contain missing values and errors. Therefore we discarded such columns as well as the first 7 columns that contained no relevant data for the analysis (subject name, timestamps,etc.):
+
+```{r}
+training <- read.csv("pml-training.csv")
+training <- training[,colSums(is.na(training))==0]
+training <- training[,colSums(training == "#DIV/0!")==0]
+training <- training[,colSums(training == "")==0]
+training <- training[,-c(1:7)]
+```
+
+In the testing set, we kept the columns that remained in the training set -except for the classe column which is not available in the testing set-.
+
+```{r}
+testing <- read.csv("pml-testing.csv")
+testing <- testing[,colnames(training)[1:(ncol(training)-1)]]
+```
+
+## Building the model
+
+Our approach to generate the final prediction was to evaluate and compare two algorithms: random forest and linear discriminant analysis. We splitted the training set into two subsets (training.train -60%-, training.test -40%-) to allow for cross validation. We trained the algorithms in the training.train set and got an individual out of sample measure using the training.test subset.
+
+```{r, message=F, warning=F}
+library(caret)
+train.rows <- createDataPartition(training$classe,p=0.6,list=FALSE)
+training.train <- training[train.rows,]
+training.test <- training[-train.rows,]
+dim(training.train)
+```
+
+Considering that after the cleanup we still have 52 variables, we evaluated whether the variables are correlated. As can be seen in the following level plot, some of the variables that are significantly correlated. This indicates that we might benefit from preprocessing via principal component analysis.
+
+```{r}
+corrMatrix <- cor(training.train[,1:52])
+corrDF <- expand.grid(row = 1:52, col = 1:52)
+corrDF$correlation <- as.vector(corrMatrix)
+levelplot(correlation ~ row+ col, corrDF)
+```
+
+We first applied the random forest algorithm, and checked its accuracy in the training.test set.
+
+```{r, message=F, warning=F}
+set.seed(12345)
+ctrl <- trainControl(preProcOptions = list(thresh = 0.95))
+model.rf <- train(classe~.,training.train,method = "rf",ntree=100,preProcess = "pca",trControl = ctrl)
+prediction.rf.is <- predict(model.rf,training.train)
+prediction.rf.oos <- predict(model.rf,training.test)
+accuracy.rf.oos <- sum(prediction.rf.oos==training.test$classe)/length(training.test$classe)
+accuracy.rf.is <- sum(prediction.rf.is==training.train$classe)/length(training.train$classe)
+model.rf$finalModel
+print(c("OOS Accuracy:",accuracy.rf.oos))
+```
+
+Next, we applied the LDA and measured its OOS accuracy.
+
+```{r}
+set.seed(2345)
+ctrl <- trainControl(preProcOptions = list(thresh = 0.95))
+model.lda <- train(classe~.,training.train,method = "lda",preProcess = "pca",trControl = ctrl)
+prediction.lda.is <- predict(model.lda,training.train)
+prediction.lda.oos <- predict(model.lda,training.test)
+accuracy.lda.oos <- sum(prediction.lda.oos==training.test$classe)/length(training.test$classe)
+accuracy.lda.is <- sum(prediction.lda.is==training.train$classe)/length(training.train$classe)
+print(c("OOS Accuracy:",accuracy.lda.oos))
+```
+
+Given that the RF model rendered more accurate results, such model was selected for the final prediction.
+
+## Applying the model on the TESTING SET
+
+Finally, we applied the RF previously developed on the testing set to produce a prediction for each of the 20 cases proposed by the final Quiz.
+ 
+```{r}
+predict.rf.testing <- predict(model.rf,testing)
+predict.rf.testing
+```
